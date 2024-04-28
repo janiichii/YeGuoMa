@@ -1,0 +1,167 @@
+---
+title: "Final project"
+author: "Jerry Guo, Yuteng Ma, Janice Ye"
+date: "2024-04-09"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+# Load all possible packages
+library(tidyverse);library(lubridate);library(viridis);library(here)
+
+library(dplyr)
+library(rvest)
+library(dataRetrieval)
+library(tidycensus)
+library(sf)
+library(leaflet)
+library(mapview)
+library(ggplot2)
+
+# Set theme
+mytheme <- theme_classic() +
+  theme(axis.text = element_text(color = "black"), 
+        legend.position = "top")
+theme_set(mytheme)
+```
+
+We will use the data information from this website: "https://www.fire.ca.gov/incidents"
+Since this website provide its up-to-date data, we will download it and use it for our research purpose
+
+```{r}
+# Read in the data and tidy it
+fire.incident <- 
+  read.csv("./Data/Raw/mapdataall.csv", stringsAsFactors = T)
+
+fire.incident <- fire.incident %>%
+  select(incident_name, incident_county, incident_acres_burned, incident_longitude, incident_latitude, incident_dateonly_created, incident_dateonly_extinguished)
+
+fire.incident$incident_dateonly_extinguished <-
+  as.Date(fire.incident$incident_dateonly_extinguished, format = "%Y-%m-%d")
+
+fire.incident$incident_dateonly_created <-
+  as.Date(fire.incident$incident_dateonly_created, format = "%Y-%m-%d")
+```
+
+Now we want to have a initial glimpse of how the incident acres burned looks like:
+
+```{r}
+acre.burned.plot <- ggplot(fire.incident,
+                     aes(x = incident_dateonly_created, y = incident_acres_burned)) +
+  geom_line() +
+  ylab("Incident Acres Burned") +
+  xlim(as.Date("2010-01-01"), max(fire.incident$incident_dateonly_created, na.rm = TRUE))+
+  mytheme
+print(acre.burned.plot)
+```
+This is a bad plot where is shows almost no valueable information for us to see. In fact, the origional plot is even worse for it contains data back in 1970s with no useful value, so we decided to seperate the raw dataset into two datasets, first one contains date from 2013 to the end of 2018, second one contains data from 2019 to recent. 
+
+```{r}
+data_2013_2018 <- fire.incident %>%
+  filter(incident_dateonly_created >= as.Date("2013-01-01") & 
+         incident_dateonly_created <= as.Date("2018-12-31"))
+
+data_2019_recent <- fire.incident %>%
+  filter(incident_dateonly_created >= as.Date("2019-01-01"))
+```
+
+Now we want to plot it to see if our range is better: 
+
+```{r}
+ggplot(data_2013_2018,
+       aes(x = incident_dateonly_created, y = incident_acres_burned)) +
+  geom_line() +
+  ylab("Incident Acres Burned") +
+  mytheme
+```
+
+This is still not a favorable plot for visualization since some incident burned too much acres, so we want to statistically define what is outlier, then create plots without outliers, and also show which date has the outlier.
+
+```{r}
+# Define a function that finds outliers
+find_outliers <- function(data, column_name) {
+  
+  IQR_value <- IQR(data[[column_name]], na.rm = TRUE)
+  
+  third_quartile <- quantile(data[[column_name]], 0.75, na.rm = TRUE)
+  
+  upper_limit <- third_quartile + 1.5 * IQR_value
+  
+  outliers <- data %>% 
+    filter(.[[column_name]] > upper_limit)
+  
+  return(outliers)
+}
+```
+
+```{r}
+# Try this function
+outliers_18 <- find_outliers(data_2013_2018, "incident_acres_burned")
+print(outliers_18)
+
+#Sensitivity Check
+IQR_value_18 <- IQR(data_2013_2018$incident_acres_burned, na.rm = TRUE)
+third_quartile_18 <- 
+  quantile(data_2013_2018$incident_acres_burned, 0.75, na.rm = TRUE)
+upper_limit_18 <- third_quartile_18 + 1.5 * IQR_value_18
+
+acre.burned.plot.18 <- 
+  ggplot(data_2013_2018, 
+         aes(x = incident_dateonly_created, y = incident_acres_burned)) +
+  geom_line() +
+  ylab("Incident Acres Burned") +
+  ylim(0, upper_limit_18) +  
+  mytheme
+
+print(acre.burned.plot.18)
+```
+
+Display which date has outlier value
+
+```{r}
+outliers_18 <- data_2013_2018 %>%
+  filter(incident_acres_burned > upper_limit_18) %>%
+  select(incident_dateonly_created, incident_acres_burned)
+
+print(outliers_18)
+```
+
+What we find is that there are fire incidents back in 1970s that influence our dataset, but we want to focus more on recent decades, so we decided to further wrangle the dataset for years after 2012.
+
+```{r}
+fire.incident <- fire.incident %>%
+  mutate(year = year(incident_dateonly_created)) %>%
+  filter(year >= 2013)
+```
+
+Try to identify the duration of each fire incident
+
+```{r}
+fire.incident <- fire.incident %>%
+  mutate(
+    incident_duration_days = incident_dateonly_extinguished -
+      incident_dateonly_created
+  )
+
+average_duration <- mean(fire.incident$incident_duration_days, na.rm = TRUE)
+
+print(average_duration)
+```
+
+explore Latitude and longtitude
+
+```{r}
+us_map <- st_read("./Data/Spatial/cb_2018_us_county_20m.shp")
+
+fire.incident.sf <- 
+  st_as_sf(fire.incident, 
+           coords = c("incident_longitude", "incident_latitude"), 
+           crs = 4326)
+
+ggplot() +
+  geom_sf(data = us_map) +  
+  ggtitle("Incident Locations in the US")
+```
+
