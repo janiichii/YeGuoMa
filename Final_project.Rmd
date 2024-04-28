@@ -1,0 +1,419 @@
+---
+title: "Final project"
+author: "Jerry Guo, Yuteng Ma, Janice Ye"
+date: "2024-04-09"
+output: 
+  html_document:
+    toc: TRUE
+    collapsed: FALSE
+editor_options: 
+  chunk_output_type: console
+---
+
+## Rationale
+Wildfires are serious natural disasters that are often caused by human activity or a natural phenomenon such as lightning, and they can happen at any time or anywhere (https://www.cisa.gov/topics/critical-infrastructure-security-and-resilience/extreme-weather-and-climate-change/wildfires). Although wildfire occurs naturally and can play an important role in the health of our ecosystem, the west coast of the United States, especially California, has been impacted severely by increasing incidents. Climate change further upsets the status quo, and wildfire occurrences have grown globally (https://www.wri.org/insights/global-trends-forest-fires). The cause of wildfires is complex and varies geographically. 
+
+This project focuses on wildfire incidents in California to infer the trends and patterns of wildfires in the recent decade. Then, we will evaluate the effectiveness of wildfire-targeted programs based on the number of wildfire incidents and casualties. The objective is to understand the pattern of wildfires. Understanding this pattern could help us reduce the frequency of wildfire incidents and thus protect the welfare of affected communities. This study also helps to evaluate the effectiveness of existing programs.
+
+
+## Research Questions
+Question 1: Has there been an overall increase in wildfire incidents in California in recent decade?
+
+Question 2: Is there a pattern of wildfire incidents? For example, where in California has more wildfire incidents?
+
+Question 3: Is state or federal programs that aim to mitigate wildfire incidents effective at decreasing casualties?
+
+
+## Data Information
+For this study, our group will utilize data downloaded from the California Department of Forestry and Fire Protection (Cal Fire). The data dates all the way back to 2013, and we will analyze the data from every five years. The dataset contains information on fire accidents, including name, location, time of occurrence, affected area, etc. These values can support our research questions by providing empirical data for analyzing trends, the effectiveness of firefighting efforts, impact assessment, and resource allocation. Detailed description of each variable will be listed below: 
+
+  Incident Name: Unique identifiers for each incident, useful for tracking and referencing specific     events
+
+  Incident County: Exact incident locations enable spatial analysis and mapping, which is crucial for   identifying hotspots and predicting future incidents
+
+  Incident Acres Burned: A direct measure of an incident's size, vital for assessing impact and the     effectiveness of programs
+
+	Longitude: Same as “Incident County”
+	
+	Latitude: Same as “Incident County”
+	
+  Date Created: Along with “Date extinguished,” will help us to identify which season/month wildfire is more common
+  
+	Date Extinguished: See as above
+
+
+## Exploratory Analysis
+
+### Set Up
+First, we will set up the theme and load all the packages we need for the project.
+
+```{r project setup, echo = FALSE, message = FALSE}
+# Load all possible packages
+library(tidyverse);library(lubridate);library(viridis);library(here)
+
+library(dplyr)
+library(rvest)
+library(dataRetrieval)
+library(tidycensus)
+library(sf)
+library(leaflet)
+library(mapview)
+library(ggplot2)
+
+# Set theme
+mytheme <- theme_classic() +
+  theme(axis.text = element_text(color = "black"), 
+        legend.position = "top")
+theme_set(mytheme)
+```
+
+### Import Data as Dataframe
+We will use the data information from this website: "https://www.fire.ca.gov/incidents"
+Since this website provide its up-to-date data, we will download it and use it for our research purpose. Scroll all the way down to "Incident Data", download the data by clicking "all data as csv."
+
+```{r data wrangling, echo = FALSE}
+# Read in the data and tidy it
+fire.incident <- 
+  read.csv("./Data/Raw/mapdataall.csv", stringsAsFactors = T)
+
+fire.incident <- fire.incident %>%
+  select(incident_name, incident_county, incident_acres_burned, incident_longitude, incident_latitude, incident_dateonly_created, incident_dateonly_extinguished)
+
+fire.incident$incident_dateonly_extinguished <-
+  as.Date(fire.incident$incident_dateonly_extinguished, format = "%Y-%m-%d")
+
+fire.incident$incident_dateonly_created <-
+  as.Date(fire.incident$incident_dateonly_created, format = "%Y-%m-%d")
+```
+
+### First Plot of Acres Burned
+Now we want to have a initial glimpse of how the incident acres burned looks like:
+
+```{r acres burned 1, echo=FALSE, warning=FALSE, fig.align='center', fig.cap = "Table 1, Acres Burned"}
+acre.burned.plot <- ggplot(fire.incident,
+                     aes(x = incident_dateonly_created, y = incident_acres_burned)) +
+  geom_point() +
+  ylab("Incident Acres Burned") +
+  xlab("Year") +
+  xlim(as.Date("2010-01-01"), max(fire.incident$incident_dateonly_created, na.rm = TRUE))+
+  mytheme
+print(acre.burned.plot)
+```
+
+### Revising Dataframe
+This is a bad plot where is shows almost no valuable information for us to see. In fact, the original plot is even worse for it contains data back in 1970s with no useful value, so we decided to separate the raw dataset into two data sets, first one contains date from 2013 to the end of 2018, second one contains data from 2019 to recent. 
+
+```{r new data frame, echo = FALSE}
+data_2013_2018 <- fire.incident %>%
+  filter(incident_dateonly_created >= as.Date("2013-01-01") & 
+         incident_dateonly_created <= as.Date("2018-12-31"))
+
+data_2019_recent <- fire.incident %>%
+  filter(incident_dateonly_created >= as.Date("2019-01-01"))
+```
+
+Now we want to plot it to see if our range is better: 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.cap = "Table 2 Acres Burned 2013 to 2018"}
+# Plot from 2013 to 2018
+ggplot(data_2013_2018,
+        aes(x = incident_dateonly_created, y = incident_acres_burned)) +
+        geom_point() +
+        ylab("Incident Acres Burned 2013 to 2018") +
+        xlab("Year") +
+        mytheme
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.cap = "Table 3 Acres Burned 2014 to 2024"}
+
+# Plot from 2019 to most recent
+ggplot(data_2019_recent,
+       aes(x = incident_dateonly_created, y = incident_acres_burned)) +
+  geom_point() +
+  ylab("Incident Acres Burned 2019 to 2024") +
+  xlab("Year") +
+  mytheme
+```
+
+The new graph which contains data from 2013 to 2018 shows the acres burned by each incidents. Based on the scatter plot, we can see that incidents in 2018 burned more acres compared to other years as its data is more spread out across the y-axis. Data points from other years are more concentrated near the x-axis with few outliers, indicating less damage.
+
+However, this is still not a favorable plot for visualization since some incident burned too much acres, so we want to statistically define what is outlier, then create plots without outliers, and also show which date has the outlier. We decided to define outlier as any value that is greater than the third quartile + 1.5 * the inner quartile value, and excluded these value from our data to further explore the incidents. 
+
+```{r, message=FALSE, echo=FALSE}
+# Define a function that finds outliers
+find_outliers <- function(data, column_name) {
+  
+  IQR_value <- IQR(data[[column_name]], na.rm = TRUE)
+  
+  third_quartile <- quantile(data[[column_name]], 0.75, na.rm = TRUE)
+  
+  upper_limit <- third_quartile + 1.5 * IQR_value
+  
+  outliers <- data %>% 
+    filter(.[[column_name]] > upper_limit)
+  
+  return(outliers)
+}
+```
+
+### Plot of Acres Burned from 2013 to 2018
+After excluding the outliers, we used a scatter plot to further explore our data.
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE, fig.align='center',fig.cap = "Table 4, Acres Burned 2013 to 2018"}
+# Try this function
+outliers_18 <- find_outliers(data_2013_2018, "incident_acres_burned")
+
+outliers_19 <- find_outliers(data_2019_recent, "incident_acres_burned")
+
+#Sensitivity Check for 2013 to 2018
+IQR_value_18 <- IQR(data_2013_2018$incident_acres_burned, na.rm = TRUE)
+third_quartile_18 <- 
+  quantile(data_2013_2018$incident_acres_burned, 0.75, na.rm = TRUE)
+upper_limit_18 <- third_quartile_18 + 1.5 * IQR_value_18
+
+acre.burned.plot.18 <- 
+  ggplot(data_2013_2018, 
+         aes(x = incident_dateonly_created, y = incident_acres_burned)) +
+  geom_point() +
+  ylab("Incident Acres Burned") +
+  ylim(0, upper_limit_18) +  
+  xlab("Year") +
+  mytheme
+
+print(acre.burned.plot.18)
+```
+
+The new graph which contains data from 2013 to 2018 shows the acres burned by each incidents. Based on the scatter plot, we can see that incidents in 2018 burned more acres compared to other years as its data is more spread out across the y-axis. Data points from other years are more concentrated near the x-axis with few outliers, indicating less damage. To ensure this prediction, we tried again with box plot for better visualization.
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE, fig.align='center',fig.cap = "Table 5, Acres Burned Boxplot 2013 to 2018"}
+# Try box plot for 2013 to 2018
+data_2013_2018 <- data_2013_2018 %>%
+  mutate(year = year(incident_dateonly_created))
+
+acre.burned.plot.18.box <- 
+  ggplot(data_2013_2018, 
+         aes(x = factor(year), y = incident_acres_burned)) +
+  geom_boxplot() +
+  ylab("Incident Acres Burned From 2013 to 2018") +
+  ylim(0, upper_limit_18) +  
+  mytheme
+
+print(acre.burned.plot.18.box)
+```
+
+We edited the code to display the data with boxplot without outliers. According to the edited boxplot, we can see that the average acres burden for each year is roughly the same. But there are some nuances between each year. For example, the data in 2014 displays a wider box compared to other years. This means that most of the incidents happened in 2014 destroyed less than 300 acres (about 75%). On the other hand, we analyzed that incidents in 2017 and 2018 is more severe because their boxplots depicts longer tail indicating 75th to 100th percentile of the data burned more frequently and more acres than other years.
+
+Now we will plot the data from 2019 to the present
+
+### Plot of Acres Burned from 2019 to 2024
+``` {r, message = FALSE, echo=FALSE,warning=FALSE, fig.align='center',fig.cap = "Table 6, Acres Burned 2019 to 2024"}
+#Sensitivity check for 2019 to most recent
+
+IQR_value_recent <- IQR(data_2019_recent$incident_acres_burned, na.rm = TRUE)
+third_quartile_recent <- 
+  quantile(data_2019_recent$incident_acres_burned, 0.75, na.rm = TRUE)
+upper_limit_recent <- third_quartile_recent + 1.5 * IQR_value_recent
+
+acre.burned.plot.recent <- 
+  ggplot(data_2019_recent, 
+         aes(x = incident_dateonly_created, y = incident_acres_burned)) +
+  geom_point() +
+  ylab("Incident Acres Burned") +
+  ylim(0, upper_limit_recent) + 
+  xlab("Year") +
+  mytheme
+
+print(acre.burned.plot.recent)
+```
+
+This plot graph lacks clarity to identify any pattern. It looks like 2024 has a lot less acres burned in incidents. To confirm this, we will try plot the data again with box plot.
+
+``` {r, message=FALSE, echo=FALSE, warning=FALSE, fig.align='center',fig.cap = "Table 7, Acres Burned Boxplot from 2019 to 2024"}
+# Try box plot for 2019 to most recent
+data_2019_recent <- data_2019_recent %>%
+  mutate(year = year(incident_dateonly_created))
+
+acre.burned.plot.recent.box <- 
+  ggplot(data_2019_recent, 
+         aes(x = factor(year), y = incident_acres_burned)) +
+  geom_boxplot() +
+  ylab("Incident Acres Burned From 2019 to Most Recent") +
+  ylim(0, upper_limit_18) +  
+  xlab("Year") +
+  mytheme
+
+print(acre.burned.plot.recent.box)
+```
+
+Based on this box plot, we cannot confirm that 2024 has less acres burned in incidents but we can state that 2024 has a lot less severe incidents since it has no tail compared to other years. 2023 is the year that suffers from the least acres burned because its average is less than the average of other years.
+
+### Frequency of Incidents
+Now we will look at the frequency of incidents. Because we already know that fire incidents back in 1970s greatly influence our data, we will only focus on the data after 2013 to focus more on recent decades.
+
+```{r, message=FALSE, echo=FALSE,warning=FALSE, fig.align='center',fig.cap = "Table 8, Incident Frequency"}
+fire.incident <- fire.incident %>%
+  mutate(year = year(incident_dateonly_created)) %>%
+  filter(year >= 2013)
+
+# Plot
+incident.frequency <- 
+  ggplot(fire.incident, aes(x = factor(year))) +  
+  geom_bar() +
+  ylab("Frequency Occurred") +
+  scale_x_discrete(name = "Year") +  
+  mytheme
+
+print(incident.frequency)
+```
+
+We used a bar plot to show the incidents happened for each year. According to the results, 2017 had the most incidents,in number of 483,116 total emergency responses, and the most destroyed structures,in number of 10,868 structures destroyed. The overall trend after 2017 is decreasing, however the year followed has more loss of life. All in all, compared to recent years, 2017 still has the highest frequency.
+
+Now, we will identify the duration of each fire incident
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE, fig.align='center',fig.cap = "Table 9, Incident Duration"}
+fire.incident <- fire.incident %>%
+  mutate(
+    incident_duration_days = incident_dateonly_extinguished -
+      incident_dateonly_created
+  )
+
+average_duration <- mean(fire.incident$incident_duration_days, na.rm = TRUE)
+
+print(average_duration)
+```
+
+The average duration of all fire incidents reported is 67.
+
+### Spatial Analysis
+Now we will conduct a spatial analysis trying to identify the geographic pattern of wildfires.
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE, fig.align='center',fig.cap = "Table 10, Map of Incidents"}
+# Import proper US maps and select only california state
+us.map <- st_read("./Data/Spatial/cb_2018_us_county_20m.shp")
+california.map <- us.map %>%
+  filter(us.map$STATEFP == '06')
+
+fire.incident.sf <- 
+  st_as_sf(fire.incident, 
+           coords = c("incident_longitude", "incident_latitude"), 
+           crs = 4326)
+
+california.map <- st_transform(california.map, crs = st_crs(fire.incident.sf))
+
+california.mapview <- 
+  ggplot() +
+  geom_sf(data = california.map) +  
+  ggtitle("Incident Locations in the US")
+
+print(california.mapview)
+
+# Use mapview function to first see fire incidents distribution
+mapview(fire.incident.sf, zcol = "incident_acres_burned")
+```
+
+Since the data only contains report within the state of California, we will treat any point that is outside of California as an error. Although wildfire is common across California, we can see that incidents in northern California are more spread across state while incidents in southern California is more concentrated along the coast. But this might not be significant enough to identify a pattern. Thus, we decided to look at the top 20 largest fire incidents.
+
+After we see fire incidents based on their specific location
+```{r, message=FALSE, echo=FALSE,warning=FALSE, fig.align='center',fig.cap = "Table 11, Map of Top 20 Incidents"}
+# Filter out top 20 largest fire incidents
+top.20.largest <- fire.incident.sf %>%
+  arrange(desc(incident_acres_burned)) %>%
+  slice_head(n = 20)
+
+mapview(top.20.largest, zcol = "incident_acres_burned")
+```
+
+Based on this graph, we can see that southern California suffers from less big fire incidents compared to northern California. There are two yellow data points that are instinctive from the rest. A yellow data point indicates an incident that burned more than 1 million acres. We will further look into these two incidents in the formal analysis. 
+
+### Casualty
+Now, we will explore the number of casualty throughout the years to identify if fire prevention programs effectively reduced the number of casualty. Since casualty number is not provided in the dataset we downloaded, we will manually scrape the data from the official website.
+
+```{r, message=FALSE, echo=FALSE}
+scrape.fatality <- function(year) {
+  scrape.website <- read_html(
+  paste0('https://www.fire.ca.gov/incidents/', year))
+  
+  total.fatality.id <- '.rounded-0:nth-child(4) .display-5'
+  fatality.component.id <- '.rounded-0:nth-child(4) .factoid__label'
+  structure.destroyed.id <- '.rounded-0:nth-child(5) .display-5'
+
+  total.fatality <- scrape.website %>% 
+    html_nodes(total.fatality.id) %>% 
+    html_text() 
+
+  fatality.component <- scrape.website %>% 
+    html_nodes(fatality.component.id) %>% 
+    html_text()
+  
+  structure.destroyed <- scrape.website %>% 
+    html_nodes(structure.destroyed.id) %>% 
+    html_text()
+  
+  civilian <- str_extract(fatality.component, "\\d+(?= Civilian)")
+  firefighter <- str_extract(fatality.component, "\\d+(?= Firefighter)")
+  
+  fatality.df <- data.frame(
+    "total.fatality" = as.numeric(total.fatality),
+    "civilian" = as.numeric(civilian),
+    "firefighter" = as.numeric(firefighter),
+    "sturcture.destroyed" = as.numeric(structure.destroyed),
+    "year" = year)
+  
+  
+  fatality.df <- fatality.df %>% 
+    arrange(year) %>%
+  
+  return(fatality.df)
+}
+
+fatality.2023 <- scrape.fatality(2023)
+
+```
+
+Scrap all years displayed on the website
+
+```{r,  message=FALSE, echo=FALSE, warning=FALSE, fig.align='center',fig.cap = "Table 12, Number of Casualty"}
+years = rep(2016:2024)
+
+fire.fatality.8y <- map(years, scrape.fatality)
+fire.fatality <- bind_rows(fire.fatality.8y)
+
+ggplot(fire.fatality) +
+  aes(x = year, y = total.fatality)+
+  geom_line() +
+  geom_smooth(method = lm) +
+  mytheme
+```
+
+We scrapped all casualty data from 2016 to 2024 (2016 was the first year that provides the number of casualty). We can see that there is a huge spike in 2018 and after that, the overall trend shows a decreasing pattern. 
+
+
+## Analysis
+In the study, we tried to explore the severity of wildfire incidents in California. Our research methodology consisted of three key phases aimed at comprehensively analyzing the severity of wildfire incidents in California and the effectiveness of prevention programs.
+
+The initial phase of research aimed to identify the acres burned by incidents in each year. We initially tracked this data with scatter plot which was not effective to identify any pattern. We then used box plot which shows the average and more extreme cases. Between 2014 and 2018, about 75% of the incidents happened in 2014 destroyed 300 or less acres. Most of the incidents (75%) from other years between 2014 and 2018 destroyed less than that. 2017 has the least average of acres burned compared to other years. But incidents in 2017 and 2018 is more severe because their boxplots depicts longer tail indicating 75th to 100th percentile of the data burned more frequently and more acres than other years. 2024 has less severe incidents than all other years from 2013 to the present because it has no tails. However, its average acres burned is higher than the average of other years between 2019 and 2024. 2023 has the least average of acres burned by incidents.
+
+Our second phrase involved exploring the frequency of incidents. Based on the bar graph, we can see that 2017 had the most incidents where as 2024 has the least incidents so far. Years after 2018 showed a decreasing trend but it is still more frequent than the years before 2018.
+
+The third phrase aimed to identify a geographic pattern of all incidents through spatial analysis. Based on the map that contains all incidents, we can see that wildfire is pervasive across California. It seems northern California suffers incidents all across while incidents in southern California are more concentrated near the coast. We then filter the data to examine the top 20 most severe incidents. Based on the new map, we concluded that northern California suffers from more severe wildfire incidents than southern California. Geographic differences is a probable factor that explains this disparity: Although southern California is hotter and drier, northern California is more mountainous. Vegetation in those mountains are combustible materials that exacerbate wildfires. According to the graph, the two most severe incidents all happened in northern California: the August Complex Fire in 2020 and the Dixie Fire in 2021 which both burned over a million acres.
+
+Our final phrase studies the number of casualty to determine the effectiveness of prevention programs. Although the frequency of wildfire incidents is higher than history, the number of casualty shows a decreasing trend after peaked in 2018.  
+
+
+## Key Findings
+1. The frequency of wildfire incidents is decreasing after 2018, but it is still more frequent compared to the years of 2013 to 2017.
+
+2. Although southern California is drier and hotter, northern California suffers from more frequent and severe wildfire due to its moisturous climate and mountainous geographic feature.
+
+3. The number of casualty shows a decreasing trend despite the high frequency of fire incidents.
+
+
+## Conclusion
+Fire incidents were most prevalent in 2017 and 2018: As 2017 had most acres burned by fire incidents, 2018 suffered from the most frequent wildfire incidents. Within California, northern California experienced more severe and frequent wildfires compared to southern California. This is due to the moisturous climate that encouraged vegetation. Pervasive combustible materials along with its mountainous geographic feature exacerbated the severity of wildfires. Despite frequent fire incidents, casualties showed a decreasing trend proving the effectivness of prevention programs.
+
+
+## Reference
+“California Department of Forestry and Fire Protection | CAL FIRE,” n.d. https://www.fire.ca.gov/.
+“Wildfires & Climate Change | California Air Resources Board,” n.d. https://ww2.arb.ca.gov/wildfires-climate-change.
+Grubbs Law Firm. “How Did the Dixie Fire Start? | Grubbs Law Firm,” October 4, 2023. https://grubbs-law.com/dixie-fire-california/#:~:text=More%20than%201%2C200%20structures%20were,utility%20poles%20with%20faulty%20fuses.
+“August Complex Wildfire and the Round Valley Indian Reservation in Northern California - RHIhub Emergency Preparedness Toolkit,” n.d. https://www.ruralhealthinfo.org/toolkits/emergency-preparedness/case-studies/natural-disasters/round-valley-indian-reservation.
